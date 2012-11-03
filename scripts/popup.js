@@ -4,11 +4,14 @@
 
 var storage = chrome.storage.local; //Uses Chrome local storage
 var userLoggedIn = null;  //Variable to store the logged in user name
-
+var oauth_sig = null; //empty variable to put the oauth signature
+        
 var makeSignedRequest = function(ck,cks,encodedurl) {     
  
 	var accessor = { consumerSecret: cks, tokenSecret: ""};          
-	var message = { action: encodedurl, method: "GET", parameters: [["oauth_version","1.0"],["oauth_consumer_key",ck]]};
+	var message = { action: encodedurl, 
+					method: "GET", 
+					parameters: [["oauth_version","1.0"],["oauth_consumer_key",ck]]};
  
 	OAuth.setTimestampAndNonce(message);
 	OAuth.SignatureMethod.sign(message, accessor);
@@ -48,7 +51,8 @@ var makeSignedRequest = function(ck,cks,encodedurl) {
 	return finalStr;
 	
 	};
-
+	
+	
 $(document).ready(
   function() {
     //$('p').text('jQuery Successfully loaded.');
@@ -98,24 +102,41 @@ $(document).ready(
             //stores the input into these variables
         userLoggedIn = $('input[name="userName"]').val();
         var userPassword = $('input[name="password"]').val();
+        var currentTab = null;
         
-		var signedURL = makeSignedRequest("dj0yJmk9bGtUYVl1ZEdHYUlsJmQ9WVdrOWJUWjRjbGh0TXpBbWNHbzlPRFF4TURjNE5qWXkmcz1jb25zdW1lcnNlY3JldCZ4PTEw",
-											"1d6ebddef0091378da65dc0230b1de806032f0ca",
-											"https://web.kitchology.com/api/v1/users/login");
+        chrome.tabs.getSelected(null,function(tab) {
+   			currentTab = tab.url;
+		});
+        
+ 
+		var loginParams = "grant_type=password&username=" + userLoggedIn + "&password=" + userPassword;
+		function callback(){ return true; }	
+	
+		$.ajax({
+        url: 'https://web.kitchology.com/api/v1/users/login',
+    	type: 'POST',
+    	datatype: 'json',
+    	data: loginParams,
+    	success: function(data) {   		
+			storage.set({'access_token':data.access_token}, function() {
+                storage.set({'mac_key':data.mac_key}, function() {   	
+                    storage.set({'user':userLoggedIn}, function() {      
+                        $('div#logindialog').dialog('close');              
+                        showLoggedInMenu();
+                        return true;
+                    });
+                });
+            });
+                //$('p').text('The access token is: ' + data.access_token + ' ' + data.mac_key);
+    	},
+    	error: function() { alert('Failed!'); },
+    	beforeSend: setHeader
+		});
+       function setHeader(xhr) {
+			 xhr.setRequestHeader('Origin', currentTab);
+		}
 		
-			$.post("https://web.kitchology.com/api/v1/users/login", {username : userLoggedIn, password : userPassword},
- 				function(data){
-   					alert(data);
- 				}, "json");
-
-/*
-         	 storage.set({'user':userLoggedIn}, function() {      
-            	$('div#logindialog').dialog('close');              
-            	showLoggedInMenu();
-          		return true;
-          		});
-*/
-        
+		
       });
     
     /*  Function to save recipe when the Save Recipe menu item is selected */
@@ -130,13 +151,49 @@ $(document).ready(
        /* Function to bring back to the main menu after saving recipe  */
     $('#saverecipe').click(
       function() {
+      
+      var sharerecipebox = false;
         //function to see if checkbox is checked      
         	if($('#sharerecipe').prop("checked")){
-      			//alert("recipe shared");
+      			sharerecipebox = true;
       		}
       		
-      	$.post("test.json", { recipe : "5" } );
-      	
+ 		oauth_sig = makeSignedRequest(<storage.mac_key>, <storage.access_token>," https://web.kitchology.com/api/v1/urls/secure");
+     	var currentTab3 = null; 		
+     	
+     	var timeStamp = OAuth.timestamp();
+     	var nonce = OAuth.nonce();
+     			
+		chrome.tabs.getSelected(null,function(tab) {
+   			currentTab3 = tab.url;
+		});
+		
+		var saveParams = "url=" + currentTab3 + "&notify_family=" + sharerecipebox;
+		
+		$.ajax({
+         url: ' https://web.kitchology.com/api/v1/urls/secure',
+  		 type: 'POST',
+   		 datatype: 'json',
+   		 data: saveParams;
+   		 success: function() { alert("Success"); },
+   	 	 error: function() { alert('Failed!'); },
+    	 beforeSend: setHeaders
+    	});
+    	
+      function setHeaders(xhr) {
+		 xhr.setRequestHeader('Authorization',OAuth
+		 											oauth_consumer_key= storage.mac_key,
+		 											oauth_nonce= nonce, 
+		 											oauth_signature= oauth_sig, 
+		 											oauth_signature_method="HMAC-SHA1", 
+		 											oauth_timestamp=timeStamp,
+		 											oauth_token = storage.token, 
+		 											oauth_version=1.0
+		 											 );								
+		 xhr.setRequestHeader('Origin', currentTab3);
+		}     		
+      		
+      		
       		
         $('div#savedialog').dialog('close');
         showLoggedInMenu();
@@ -187,15 +244,41 @@ $(document).ready(
     /*  Function to show recipes of the user when the Show Recipes menu item is selected */    
     $('#menushowrecipes').click(
       function() {        
+/*
+		oauth_sig = makeSignedRequest(<storage.mac_key>, <storage.access_token>,"https://web.kitchology.com/api/v1/users/recipes/secure");
+     	var currentTab2 = null; 				
+		chrome.tabs.getSelected(null,function(tab) {
+   			currentTab2 = tab.url;
+		});
+		
+		$.ajax({
+         url: 'https://web.kitchology.com/api/v1/users/recipes/secure',
+  		 type: 'GET',
+   		 datatype: 'json',
+   		 success: function() { alert("Success"); },
+   	 	 error: function() { alert('Failed!'); },
+    	 beforeSend: setHeaders
+    	});
+    	
+      function setHeaders(xhr) {
+		 xhr.setRequestHeader('Authorization',OAuth
+		 											oauth_consumer_key= storage.token_secret,
+		 											oauth_nonce="7d8f3e4a", 
+		 											oauth_signature= oauth_sig, 
+		 											oauth_signature_method="HMAC-SHA1", 
+		 											oauth_timestamp=timeStamp, 
+		 											oauth_version=1.0 );					
+		 xhr.setRequestHeader('Origin', currentTab2);
+		}
+		
+		*/
+      
         $('div#loggedinmenu').css('display','none'); //Hide the menu
         $('#recipes').dataTable( {
-        
          "bProcessing": true,
          "bDestroy": true,
          "bRetrieve":true,
    		 "sAjaxSource": "https://web.kitchology.com/api/v1/users/recipes",
-   //      "sAjaxSource": 'https://web.kitchology.com/KitchologyREST/resources/com.kitchology.jpa.userrecipes'   
-         
          "aoColumns": [
             { "sTitle": "Name" },
             { "sTitle": "Description" },
